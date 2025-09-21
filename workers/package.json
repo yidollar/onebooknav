@@ -1,0 +1,36 @@
+{
+  "name": "onebooknav-workers",
+  "version": "1.0.0",
+  "description": "OneBookNav Cloudflare Workers Implementation",
+  "main": "index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:dev": "wrangler deploy --env development",
+    "deploy:prod": "wrangler deploy --env production",
+    "build": "echo 'No build step required for Workers'",
+    "db:init": "wrangler d1 execute onebooknav --file=../data/schema.sql",
+    "db:migrate": "wrangler d1 migrations apply onebooknav",
+    "db:backup": "wrangler d1 export onebooknav --output=backup.sql",
+    "secret:jwt": "wrangler secret put JWT_SECRET",
+    "logs": "wrangler tail"
+  },
+  "dependencies": {
+    "hono": "^3.0.0",
+    "itty-router": "^4.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "typescript": "^5.0.0",
+    "wrangler": "^3.0.0"
+  },
+  "keywords": [
+    "cloudflare",
+    "workers",
+    "bookmarks",
+    "navigation",
+    "edge-computing"
+  ],
+  "author": "OneBookNav",
+  "license": "MIT"
+}

@@ -1,0 +1,57 @@
+# OneBookNav Cloudflare Workers Configuration
+
+name = "onebooknav"
+main = "index.js"
+compatibility_date = "2024-01-01"
+
+# Environment variables
+[vars]
+SITE_TITLE = "OneBookNav"
+SITE_URL = "https://onebooknav.your-domain.workers.dev"
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "onebooknav"
+database_id = "your-database-id"
+
+# R2 Storage binding for static assets
+[[r2_buckets]]
+binding = "STORAGE"
+bucket_name = "onebooknav-assets"
+
+# KV for caching (optional)
+[[kv_namespaces]]
+binding = "CACHE"
+id = "your-kv-namespace-id"
+
+# Secrets (set via wrangler secret)
+# wrangler secret put JWT_SECRET
+
+# Routes
+[routes]
+pattern = "onebooknav.your-domain.com/*"
+zone_name = "your-domain.com"
+
+# Build configuration
+[build]
+command = "npm run build"
+cwd = "."
+
+# Development configuration
+[env.development]
+vars = { SITE_TITLE = "OneBookNav Dev" }
+
+[env.development.d1_databases]
+binding = "DB"
+database_name = "onebooknav-dev"
+database_id = "your-dev-database-id"
+
+# Production configuration
+[env.production]
+vars = { SITE_TITLE = "OneBookNav" }
+
+[env.production.d1_databases]
+binding = "DB"
+database_name = "onebooknav-prod"
+database_id = "your-prod-database-id"
