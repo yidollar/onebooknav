@@ -10,7 +10,7 @@ SITE_TITLE = "OneBookNav"
 SITE_URL = "https://onebooknav.your-domain.workers.dev"
 # Admin account will be created automatically on first run
 DEFAULT_ADMIN_USERNAME = "admin"
-DEFAULT_ADMIN_EMAIL = "admin@example.com"
+DEFAULT_ADMIN_EMAIL = "cxc0@lao.ac.cn"
 AUTO_CREATE_ADMIN = "true"
 
 # D1 Database binding
@@ -20,7 +20,7 @@ AUTO_CREATE_ADMIN = "true"
 [[d1_databases]]
 binding = "DB"
 database_name = "onebooknav"
-database_id = "YOUR_DATABASE_ID_HERE"
+database_id = "338288da-994c-479b-a11d-8165a13edd95"
 
 # R2 Storage binding for static assets (optional)
 # Uncomment if you plan to use R2 for static assets
@@ -58,18 +58,19 @@ vars = {
 [[env.development.d1_databases]]
 binding = "DB"
 database_name = "onebooknav-dev"
-database_id = "YOUR_DEV_DATABASE_ID_HERE"
+database_id = "000"
 
 # Production configuration
 [env.production]
 vars = {
   SITE_TITLE = "OneBookNav",
   DEFAULT_ADMIN_USERNAME = "admin",
-  DEFAULT_ADMIN_EMAIL = "admin@example.com",
+  DEFAULT_ADMIN_PASSWORD = "2053190"
+  DEFAULT_ADMIN_EMAIL = "cxc0@lao.ac.cn",
   AUTO_CREATE_ADMIN = "true"
 }
 
 [[env.production.d1_databases]]
 binding = "DB"
-database_name = "onebooknav-prod"
-database_id = "YOUR_PROD_DATABASE_ID_HERE"
+database_name = "onebooknav"
+database_id = "338288da-994c-479b-a11d-8165a13edd95"
