@@ -19,6 +19,13 @@ export default {
     }
 
     try {
+      // Validate environment
+      const validationError = validateEnvironment(env);
+      if (validationError) {
+        console.error('Environment validation failed:', validationError);
+        return jsonResponse({ success: false, error: 'Service unavailable - Configuration error' }, 503);
+      }
+
       // Initialize database if needed
       await initializeDatabase(env.DB);
 
@@ -1260,10 +1267,23 @@ async function initializeDefaultAdmin(env) {
       return; // Admin already exists
     }
 
-    // Get default admin credentials from environment
+    // Get default admin credentials - password must come from secrets
     const username = env.DEFAULT_ADMIN_USERNAME || 'admin';
-    const password = env.DEFAULT_ADMIN_PASSWORD || 'admin679';
+    const password = env.DEFAULT_ADMIN_PASSWORD;
     const email = env.DEFAULT_ADMIN_EMAIL || 'admin@example.com';
+
+    // Validate that password is set via secrets
+    if (!password) {
+      console.error('OneBookNav: DEFAULT_ADMIN_PASSWORD secret not set. Cannot create admin account.');
+      console.error('Run: wrangler secret put DEFAULT_ADMIN_PASSWORD');
+      return;
+    }
+
+    // Validate password strength
+    if (password.length < 8) {
+      console.error('OneBookNav: Admin password must be at least 8 characters long.');
+      return;
+    }
 
     // Hash the password
     const passwordHash = await hashPassword(password);
@@ -1292,4 +1312,26 @@ async function initializeDefaultAdmin(env) {
   } catch (error) {
     console.error('OneBookNav: Failed to create default admin account:', error);
   }
+}
+
+/**
+ * Validate environment configuration
+ */
+function validateEnvironment(env) {
+  // Check required bindings
+  if (!env.DB) {
+    return 'D1 Database binding (DB) is not configured. Please check your wrangler.toml file.';
+  }
+
+  // Check required secrets for admin creation
+  if (env.AUTO_CREATE_ADMIN === 'true' && !env.DEFAULT_ADMIN_PASSWORD) {
+    return 'DEFAULT_ADMIN_PASSWORD secret is required when AUTO_CREATE_ADMIN is enabled. Run: wrangler secret put DEFAULT_ADMIN_PASSWORD';
+  }
+
+  // Check JWT secret for authentication
+  if (!env.JWT_SECRET) {
+    return 'JWT_SECRET is required for authentication. Run: wrangler secret put JWT_SECRET';
+  }
+
+  return null; // No validation errors
 }

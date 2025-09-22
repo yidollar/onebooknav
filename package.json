@@ -19,8 +19,7 @@
     "lint": "echo \"Linting not configured\" && exit 0",
     "format": "echo \"Formatting not configured\" && exit 0",
     "backup": "php scripts/backup.php",
-    "migrate": "php scripts/migrate.php",
-    "install": "php install.php"
+    "migrate": "php scripts/migrate.php"
   },
   "repository": {
     "type": "git",

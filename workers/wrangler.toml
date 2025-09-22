@@ -8,35 +8,40 @@ compatibility_date = "2024-01-01"
 [vars]
 SITE_TITLE = "OneBookNav"
 SITE_URL = "https://onebooknav.your-domain.workers.dev"
-# 默认管理员账户配置
+# Admin account will be created automatically on first run
 DEFAULT_ADMIN_USERNAME = "admin"
-DEFAULT_ADMIN_PASSWORD = "admin679"
 DEFAULT_ADMIN_EMAIL = "admin@example.com"
 AUTO_CREATE_ADMIN = "true"
 
 # D1 Database binding
+# You need to create the database first: wrangler d1 create onebooknav
+# Then replace "your-database-id" with the actual database ID
 [[d1_databases]]
 binding = "DB"
 database_name = "onebooknav"
 database_id = "your-database-id"
 
-# R2 Storage binding for static assets
-[[r2_buckets]]
-binding = "STORAGE"
-bucket_name = "onebooknav-assets"
+# R2 Storage binding for static assets (optional)
+# Uncomment if you plan to use R2 for static assets
+# [[r2_buckets]]
+# binding = "STORAGE"
+# bucket_name = "onebooknav-assets"
 
 # KV for caching (optional)
-[[kv_namespaces]]
-binding = "CACHE"
-id = "your-kv-namespace-id"
+# Uncomment if you plan to use KV for caching
+# [[kv_namespaces]]
+# binding = "CACHE"
+# id = "your-kv-namespace-id"
 
 # Secrets (set via wrangler secret)
+# IMPORTANT: Set these secrets before deployment:
 # wrangler secret put JWT_SECRET
+# wrangler secret put DEFAULT_ADMIN_PASSWORD
 
-# Routes
-[routes]
-pattern = "onebooknav.your-domain.com/*"
-zone_name = "your-domain.com"
+# Custom domains (comment out if using workers.dev subdomain)
+# [routes]
+# pattern = "onebooknav.your-domain.com/*"
+# zone_name = "your-domain.com"
 
 # Workers 不需要构建步骤，代码直接部署
 
@@ -45,12 +50,11 @@ zone_name = "your-domain.com"
 vars = {
   SITE_TITLE = "OneBookNav Dev",
   DEFAULT_ADMIN_USERNAME = "admin",
-  DEFAULT_ADMIN_PASSWORD = "admin679",
   DEFAULT_ADMIN_EMAIL = "admin@example.com",
   AUTO_CREATE_ADMIN = "true"
 }
 
-[env.development.d1_databases]
+[[env.development.d1_databases]]
 binding = "DB"
 database_name = "onebooknav-dev"
 database_id = "your-dev-database-id"
@@ -60,12 +64,11 @@ database_id = "your-dev-database-id"
 vars = {
   SITE_TITLE = "OneBookNav",
   DEFAULT_ADMIN_USERNAME = "admin",
-  DEFAULT_ADMIN_PASSWORD = "admin679",
   DEFAULT_ADMIN_EMAIL = "admin@example.com",
   AUTO_CREATE_ADMIN = "true"
 }
 
-[env.production.d1_databases]
+[[env.production.d1_databases]]
 binding = "DB"
 database_name = "onebooknav-prod"
 database_id = "your-prod-database-id"
