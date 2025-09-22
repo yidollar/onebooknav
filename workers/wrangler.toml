@@ -14,12 +14,13 @@ DEFAULT_ADMIN_EMAIL = "admin@example.com"
 AUTO_CREATE_ADMIN = "true"
 
 # D1 Database binding
-# You need to create the database first: wrangler d1 create onebooknav
-# Then replace "your-database-id" with the actual database ID
+# REQUIRED: Create database first: wrangler d1 create onebooknav
+# Then replace "YOUR_DATABASE_ID_HERE" with the actual database ID
+# Example: database_id = "01234567-89ab-cdef-0123-456789abcdef"
 [[d1_databases]]
 binding = "DB"
 database_name = "onebooknav"
-database_id = "your-database-id"
+database_id = "YOUR_DATABASE_ID_HERE"
 
 # R2 Storage binding for static assets (optional)
 # Uncomment if you plan to use R2 for static assets
@@ -57,7 +58,7 @@ vars = {
 [[env.development.d1_databases]]
 binding = "DB"
 database_name = "onebooknav-dev"
-database_id = "your-dev-database-id"
+database_id = "YOUR_DEV_DATABASE_ID_HERE"
 
 # Production configuration
 [env.production]
@@ -71,4 +72,4 @@ vars = {
 [[env.production.d1_databases]]
 binding = "DB"
 database_name = "onebooknav-prod"
-database_id = "your-prod-database-id"
+database_id = "YOUR_PROD_DATABASE_ID_HERE"

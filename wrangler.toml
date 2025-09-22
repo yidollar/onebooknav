@@ -9,8 +9,11 @@ DEFAULT_ADMIN_USERNAME = "admin"
 DEFAULT_ADMIN_EMAIL = "admin@example.com"
 AUTO_CREATE_ADMIN = "true"
 
-# D1 Database binding (需要先创建数据库)
+# D1 Database binding
+# REQUIRED: Create database first: wrangler d1 create onebooknav
+# Then replace "YOUR_DATABASE_ID_HERE" with the actual database ID
+# Example: database_id = "01234567-89ab-cdef-0123-456789abcdef"
 [[d1_databases]]
 binding = "DB"
 database_name = "onebooknav"
-database_id = "your-database-id"
+database_id = "YOUR_DATABASE_ID_HERE"

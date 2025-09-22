@@ -51,24 +51,23 @@ npm install -g wrangler
 # 2. 登录账户
 wrangler auth login
 
-# 3. 创建数据库
-wrangler d1 create onebooknav
-
-# 4. 下载代码
+# 3. 下载代码
 git clone https://github.com/your-repo/onebooknav.git
 cd onebooknav/workers
 
-# 5. 配置数据库ID到 wrangler.toml
+# 4. 一键部署脚本 (推荐)
+# Linux/macOS:
+chmod +x deploy.sh && ./deploy.sh
+# Windows:
+# deploy.bat
 
-# 6. 初始化数据库
-wrangler d1 execute onebooknav --file=../data/schema.sql
-
-# 7. 设置安全密钥
-wrangler secret put JWT_SECRET          # 粘贴64位随机字符串
-wrangler secret put DEFAULT_ADMIN_PASSWORD  # 设置管理员密码
-
-# 8. 部署！
-wrangler deploy
+# 或手动部署:
+# wrangler d1 create onebooknav
+# 更新 wrangler.toml 中的数据库 ID
+# wrangler d1 execute onebooknav --file=../data/schema.sql
+# wrangler secret put JWT_SECRET
+# wrangler secret put DEFAULT_ADMIN_PASSWORD
+# wrangler deploy
 ```
 
 **🎉 完成！**访问显示的 Workers 域名，使用 `admin` 和你设置的密码登录
@@ -1543,7 +1542,7 @@ post_max_size = 50M
 
 ## 🚨 Cloudflare Workers 部署错误解决方案
 
-### 错误：Missing entry-point to Worker script
+### 错误1：Missing entry-point to Worker script
 
 **错误信息：**
 ```
@@ -1552,6 +1551,16 @@ post_max_size = 50M
 
 **根本原因：**
 命令在项目根目录执行了 `npx wrangler deploy`，但 wrangler 配置和入口文件在 `workers/` 子目录中。
+
+### 错误2：Invalid database_id configuration
+
+**错误信息：**
+```
+✘ [ERROR] You must use a real database in the database_id configuration.
+```
+
+**根本原因：**
+wrangler.toml 中的 `database_id` 字段仍然是占位符，需要替换为真实的数据库 ID。
 
 **项目结构分析：**
 - **主项目**：PHP 应用，入口文件是 `index.php`
@@ -1595,13 +1604,17 @@ cd onebooknav/workers
 # 2. 创建 D1 数据库
 wrangler d1 create onebooknav
 
-# 3. 设置密钥
+# 3. 复制返回的数据库 ID，更新 wrangler.toml 中的 database_id
+# 将 "YOUR_DATABASE_ID_HERE" 替换为实际的数据库 ID
+
+# 4. 初始化数据库结构
+wrangler d1 execute onebooknav --file=../data/schema.sql
+
+# 5. 设置密钥
 wrangler secret put JWT_SECRET          # 64位随机字符串
 wrangler secret put DEFAULT_ADMIN_PASSWORD  # 管理员密码
 
-# 4. 更新 wrangler.toml 中的 database_id
-
-# 5. 部署
+# 6. 部署
 wrangler deploy
 ```
 
@@ -1618,6 +1631,32 @@ wrangler deploy
 - **作用**：默认管理员账户密码
 - **要求**：最少8字符，包含大小写字母、数字、特殊字符
 - **用户名**：默认为 `admin`
+
+### 🎯 一键部署脚本
+
+为了简化部署过程，我们提供了自动化部署脚本：
+
+**Linux/macOS:**
+```bash
+cd onebooknav/workers
+chmod +x deploy.sh
+./deploy.sh
+```
+
+**Windows:**
+```cmd
+cd onebooknav\workers
+deploy.bat
+```
+
+**脚本功能：**
+- ✅ 自动创建 D1 数据库
+- ✅ 自动更新配置文件中的数据库 ID
+- ✅ 自动初始化数据库结构
+- ✅ 引导设置安全密钥
+- ✅ 自动部署到 Cloudflare Workers
+
+使用脚本部署完成后，访问显示的 Workers 域名，用 `admin` 和你设置的密码登录管理后台。
 
 ## 🔧 常见问题
 
