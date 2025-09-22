@@ -1,0 +1,16 @@
+name = "onebooknav"
+main = "workers/index.js"
+compatibility_date = "2024-01-01"
+
+# Environment variables
+[vars]
+SITE_TITLE = "OneBookNav"
+DEFAULT_ADMIN_USERNAME = "admin"
+DEFAULT_ADMIN_EMAIL = "admin@example.com"
+AUTO_CREATE_ADMIN = "true"
+
+# D1 Database binding (需要先创建数据库)
+[[d1_databases]]
+binding = "DB"
+database_name = "onebooknav"
+database_id = "your-database-id"

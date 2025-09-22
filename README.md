@@ -63,14 +63,15 @@ cd onebooknav/workers
 # 6. 初始化数据库
 wrangler d1 execute onebooknav --file=../data/schema.sql
 
-# 7. 设置JWT密钥
-wrangler secret put JWT_SECRET
+# 7. 设置安全密钥
+wrangler secret put JWT_SECRET          # 粘贴64位随机字符串
+wrangler secret put DEFAULT_ADMIN_PASSWORD  # 设置管理员密码
 
 # 8. 部署！
 wrangler deploy
 ```
 
-**🎉 完成！**访问显示的 Workers 域名，使用 `admin/admin679` 登录
+**🎉 完成！**访问显示的 Workers 域名，使用 `admin` 和你设置的密码登录
 
 ### 系统要求
 
@@ -378,11 +379,43 @@ wrangler d1 execute onebooknav --command="SELECT name FROM sqlite_master WHERE t
 
 #### 5. 设置安全密钥
 
+##### JWT_SECRET 密钥设置
+**作用：**
+- 用于生成和验证 JSON Web Token (JWT)
+- JWT 用于用户身份验证和会话管理
+- 确保用户登录状态的安全性
+
+**生成强密钥的方法：**
+- 在线生成器：访问 https://www.uuidgenerator.net/ 生成 UUID
+- 命令行生成：`openssl rand -hex 32`
+- 或使用任意64位随机字符串
+
 ```bash
 # 设置 JWT 密钥（必须）
 wrangler secret put JWT_SECRET
-# 输入一个强密码，例如：your-super-secure-jwt-secret-key-2024
+# 提示输入时，粘贴你的随机密钥，例如：
+# abc123def456ghi789jkl012mno345pqr678stu901vwx234yzabc567def890
+```
 
+##### DEFAULT_ADMIN_PASSWORD 密钥设置
+**作用：**
+- 设置系统默认管理员账户的密码
+- 首次部署时会自动创建管理员账户
+- 用户名默认为 "admin"（在 wrangler.toml 中配置）
+
+```bash
+# 设置管理员密码（必须）
+wrangler secret put DEFAULT_ADMIN_PASSWORD
+# 提示输入时，输入你的管理员密码，例如：
+# MySecurePassword123!
+```
+
+**安全要求：**
+- 密码最少8个字符
+- 建议包含大小写字母、数字和特殊字符
+- 密码将存储在 Cloudflare 安全环境中，不会出现在代码里
+
+```bash
 # 验证密钥是否设置成功
 wrangler secret list
 ```
@@ -1507,6 +1540,84 @@ max_input_time = 300
 upload_max_filesize = 50M
 post_max_size = 50M
 ```
+
+## 🚨 Cloudflare Workers 部署错误解决方案
+
+### 错误：Missing entry-point to Worker script
+
+**错误信息：**
+```
+✘ [ERROR] Missing entry-point to Worker script or to assets directory
+```
+
+**根本原因：**
+命令在项目根目录执行了 `npx wrangler deploy`，但 wrangler 配置和入口文件在 `workers/` 子目录中。
+
+**项目结构分析：**
+- **主项目**：PHP 应用，入口文件是 `index.php`
+- **Workers 子项目**：在 `workers/` 目录中，包含完整的配置和代码
+
+**解决方案：**
+
+#### 方案1（推荐）：使用现有 workers 配置
+```bash
+# 进入 workers 目录
+cd onebooknav/workers
+
+# 部署
+wrangler deploy
+```
+
+#### 方案2：在根目录创建配置文件
+如果必须在根目录执行，可以创建根目录的 `wrangler.toml`：
+```toml
+name = "onebooknav"
+main = "workers/index.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+SITE_TITLE = "OneBookNav"
+DEFAULT_ADMIN_USERNAME = "admin"
+DEFAULT_ADMIN_EMAIL = "admin@example.com"
+AUTO_CREATE_ADMIN = "true"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "onebooknav"
+database_id = "your-database-id"
+```
+
+**完整部署步骤：**
+```bash
+# 1. 进入 workers 目录
+cd onebooknav/workers
+
+# 2. 创建 D1 数据库
+wrangler d1 create onebooknav
+
+# 3. 设置密钥
+wrangler secret put JWT_SECRET          # 64位随机字符串
+wrangler secret put DEFAULT_ADMIN_PASSWORD  # 管理员密码
+
+# 4. 更新 wrangler.toml 中的 database_id
+
+# 5. 部署
+wrangler deploy
+```
+
+### 密钥设置详解
+
+#### JWT_SECRET 密钥
+- **作用**：JWT 身份验证和会话管理
+- **生成方法**：
+  - 在线生成：https://www.uuidgenerator.net/
+  - 命令行：`openssl rand -hex 32`
+  - 64位随机字符串
+
+#### DEFAULT_ADMIN_PASSWORD 密钥
+- **作用**：默认管理员账户密码
+- **要求**：最少8字符，包含大小写字母、数字、特殊字符
+- **用户名**：默认为 `admin`
 
 ## 🔧 常见问题
 
