@@ -8,6 +8,11 @@ compatibility_date = "2024-01-01"
 [vars]
 SITE_TITLE = "OneBookNav"
 SITE_URL = "https://onebooknav.your-domain.workers.dev"
+# 默认管理员账户配置
+DEFAULT_ADMIN_USERNAME = "admin"
+DEFAULT_ADMIN_PASSWORD = "admin679"
+DEFAULT_ADMIN_EMAIL = "admin@example.com"
+AUTO_CREATE_ADMIN = "true"
 
 # D1 Database binding
 [[d1_databases]]
@@ -33,14 +38,17 @@ id = "your-kv-namespace-id"
 pattern = "onebooknav.your-domain.com/*"
 zone_name = "your-domain.com"
 
-# Build configuration
-[build]
-command = "npm run build"
-cwd = "."
+# Workers 不需要构建步骤，代码直接部署
 
 # Development configuration
 [env.development]
-vars = { SITE_TITLE = "OneBookNav Dev" }
+vars = {
+  SITE_TITLE = "OneBookNav Dev",
+  DEFAULT_ADMIN_USERNAME = "admin",
+  DEFAULT_ADMIN_PASSWORD = "admin679",
+  DEFAULT_ADMIN_EMAIL = "admin@example.com",
+  AUTO_CREATE_ADMIN = "true"
+}
 
 [env.development.d1_databases]
 binding = "DB"
@@ -49,7 +57,13 @@ database_id = "your-dev-database-id"
 
 # Production configuration
 [env.production]
-vars = { SITE_TITLE = "OneBookNav" }
+vars = {
+  SITE_TITLE = "OneBookNav",
+  DEFAULT_ADMIN_USERNAME = "admin",
+  DEFAULT_ADMIN_PASSWORD = "admin679",
+  DEFAULT_ADMIN_EMAIL = "admin@example.com",
+  AUTO_CREATE_ADMIN = "true"
+}
 
 [env.production.d1_databases]
 binding = "DB"

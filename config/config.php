@@ -25,7 +25,9 @@ define('SITE_URL', 'http://localhost');
 define('ADMIN_EMAIL', 'admin@example.com');
 
 // Security Settings
-define('JWT_SECRET', 'onebooknav-jwt-secret-change-this-' . md5(__DIR__));
+// ⚠️  SECURITY WARNING: This is a weak secret! Change to a secure random string
+// Generate a secure secret using: openssl rand -base64 32
+define('JWT_SECRET', 'CHANGE-THIS-TO-SECURE-RANDOM-STRING-' . bin2hex(random_bytes(16)));
 define('SESSION_NAME', 'onebooknav_session');
 define('SESSION_LIFETIME', 86400 * 30); // 30 days
 define('CSRF_TOKEN_NAME', '_token');
@@ -36,6 +38,12 @@ define('REQUIRE_EMAIL_VERIFICATION', false);
 define('ENABLE_WEBDAV_BACKUP', true);
 define('ENABLE_API', true);
 define('ENABLE_PWA', true);
+
+// Default Admin Account (auto-created on first run)
+define('DEFAULT_ADMIN_USERNAME', 'admin');
+define('DEFAULT_ADMIN_PASSWORD', 'admin679');
+define('DEFAULT_ADMIN_EMAIL', 'admin@example.com');
+define('AUTO_CREATE_ADMIN', true);
 
 // File Upload Settings
 define('UPLOAD_MAX_SIZE', 1024 * 1024 * 2); // 2MB

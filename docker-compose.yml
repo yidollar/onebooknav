@@ -24,6 +24,11 @@ services:
       - SITE_URL=http://localhost:3080
       - DB_TYPE=sqlite
       - DEBUG_MODE=false
+      # Default Admin Account
+      - DEFAULT_ADMIN_USERNAME=admin
+      - DEFAULT_ADMIN_PASSWORD=admin679
+      - DEFAULT_ADMIN_EMAIL=admin@example.com
+      - AUTO_CREATE_ADMIN=true
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80"]
       interval: 30s
@@ -103,6 +108,11 @@ services:
       - DB_TYPE=sqlite
       - DEBUG_MODE=true
       - LOG_LEVEL=DEBUG
+      # Default Admin Account
+      - DEFAULT_ADMIN_USERNAME=admin
+      - DEFAULT_ADMIN_PASSWORD=admin679
+      - DEFAULT_ADMIN_EMAIL=admin@example.com
+      - AUTO_CREATE_ADMIN=true
     networks:
       - onebooknav_network
     profiles:

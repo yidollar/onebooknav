@@ -22,6 +22,9 @@ export default {
       // Initialize database if needed
       await initializeDatabase(env.DB);
 
+      // Initialize default admin account if enabled
+      await initializeDefaultAdmin(env);
+
       // Route the request
       const response = await handleRequest(request, env);
 
@@ -263,14 +266,14 @@ async function handleLogin(request, env) {
     }
 
     // Find user
-    const user = await env.DB.prepare('SELECT * FROM users WHERE username = ? OR email = ?')
+    const user = await env.DB.prepare('SELECT * FROM users WHERE (username = ? OR email = ?) AND is_active = 1')
       .bind(username, username).first();
 
     if (!user) {
       return jsonResponse({ success: false, error: 'Invalid credentials' }, 401);
     }
 
-    // Verify password (Note: In real implementation, use proper password hashing)
+    // Verify password
     const isValidPassword = await verifyPassword(password, user.password_hash);
     if (!isValidPassword) {
       return jsonResponse({ success: false, error: 'Invalid credentials' }, 401);
@@ -285,11 +288,13 @@ async function handleLogin(request, env) {
 
     return jsonResponse({
       success: true,
+      message: 'Login successful',
       user: {
         id: user.id,
         username: user.username,
         email: user.email,
-        role: user.role
+        role: user.role,
+        avatar_url: user.avatar_url
       },
       token
     });
@@ -308,22 +313,182 @@ async function handleCategories(request, env) {
     return jsonResponse({ success: false, error: 'Authentication required' }, 401);
   }
 
+  const url = new URL(request.url);
+  const pathSegments = url.pathname.split('/').filter(Boolean);
+  const categoryId = pathSegments[2];
+
   switch (request.method) {
     case 'GET':
-      const categories = await env.DB.prepare(
-        'SELECT * FROM categories WHERE user_id = ? ORDER BY parent_id, weight, name'
-      ).bind(user.id).all();
-      return jsonResponse({ success: true, data: categories.results });
+      try {
+        if (categoryId) {
+          // Get single category
+          const category = await env.DB.prepare(
+            'SELECT * FROM categories WHERE id = ? AND user_id = ?'
+          ).bind(categoryId, user.id).first();
+
+          if (!category) {
+            return jsonResponse({ success: false, error: 'Category not found' }, 404);
+          }
+
+          return jsonResponse({ success: true, data: category });
+        } else {
+          // Get all categories with hierarchy
+          const categories = await env.DB.prepare(
+            'SELECT * FROM categories WHERE user_id = ? ORDER BY parent_id, weight DESC, name'
+          ).bind(user.id).all();
+
+          // Build hierarchy
+          const categoryMap = new Map();
+          const rootCategories = [];
+
+          (categories.results || []).forEach(cat => {
+            cat.children = [];
+            categoryMap.set(cat.id, cat);
+          });
+
+          (categories.results || []).forEach(cat => {
+            if (cat.parent_id && categoryMap.has(cat.parent_id)) {
+              categoryMap.get(cat.parent_id).children.push(cat);
+            } else {
+              rootCategories.push(cat);
+            }
+          });
+
+          return jsonResponse({ success: true, data: rootCategories });
+        }
+      } catch (error) {
+        console.error('Get categories error:', error);
+        return jsonResponse({ success: false, error: 'Failed to get categories' }, 500);
+      }
 
     case 'POST':
-      const data = await request.json();
-      const { name, parent_id, icon, color, is_private } = data;
+      try {
+        const data = await request.json();
+        const { name, parent_id, icon, color, is_private } = data;
 
-      const result = await env.DB.prepare(
-        'INSERT INTO categories (name, parent_id, user_id, icon, color, is_private) VALUES (?, ?, ?, ?, ?, ?)'
-      ).bind(name, parent_id, user.id, icon, color, is_private ? 1 : 0).run();
+        if (!name || name.trim().length === 0) {
+          return jsonResponse({ success: false, error: 'Category name is required' }, 400);
+        }
 
-      return jsonResponse({ success: true, data: { id: result.meta.last_row_id } });
+        // Validate parent category if provided
+        if (parent_id) {
+          const parentCategory = await env.DB.prepare(
+            'SELECT id FROM categories WHERE id = ? AND user_id = ?'
+          ).bind(parent_id, user.id).first();
+
+          if (!parentCategory) {
+            return jsonResponse({ success: false, error: 'Invalid parent category' }, 400);
+          }
+        }
+
+        const result = await env.DB.prepare(
+          'INSERT INTO categories (name, parent_id, user_id, icon, color, is_private, created_at) VALUES (?, ?, ?, ?, ?, ?, datetime("now"))'
+        ).bind(name.trim(), parent_id || null, user.id, icon || '', color || '', is_private ? 1 : 0).run();
+
+        return jsonResponse({
+          success: true,
+          data: { id: result.meta.last_row_id },
+          message: 'Category created successfully'
+        });
+      } catch (error) {
+        console.error('Create category error:', error);
+        return jsonResponse({ success: false, error: 'Failed to create category' }, 500);
+      }
+
+    case 'PUT':
+      try {
+        if (!categoryId) {
+          return jsonResponse({ success: false, error: 'Category ID required' }, 400);
+        }
+
+        const data = await request.json();
+        const { name, parent_id, icon, color, is_private } = data;
+
+        if (!name || name.trim().length === 0) {
+          return jsonResponse({ success: false, error: 'Category name is required' }, 400);
+        }
+
+        // Check if category belongs to user
+        const category = await env.DB.prepare(
+          'SELECT id FROM categories WHERE id = ? AND user_id = ?'
+        ).bind(categoryId, user.id).first();
+
+        if (!category) {
+          return jsonResponse({ success: false, error: 'Category not found' }, 404);
+        }
+
+        // Validate parent category if provided (and not self-referencing)
+        if (parent_id && parent_id != categoryId) {
+          const parentCategory = await env.DB.prepare(
+            'SELECT id FROM categories WHERE id = ? AND user_id = ?'
+          ).bind(parent_id, user.id).first();
+
+          if (!parentCategory) {
+            return jsonResponse({ success: false, error: 'Invalid parent category' }, 400);
+          }
+        }
+
+        await env.DB.prepare(
+          'UPDATE categories SET name = ?, parent_id = ?, icon = ?, color = ?, is_private = ? WHERE id = ? AND user_id = ?'
+        ).bind(
+          name.trim(),
+          (parent_id && parent_id != categoryId) ? parent_id : null,
+          icon || '',
+          color || '',
+          is_private ? 1 : 0,
+          categoryId,
+          user.id
+        ).run();
+
+        return jsonResponse({ success: true, message: 'Category updated successfully' });
+      } catch (error) {
+        console.error('Update category error:', error);
+        return jsonResponse({ success: false, error: 'Failed to update category' }, 500);
+      }
+
+    case 'DELETE':
+      try {
+        if (!categoryId) {
+          return jsonResponse({ success: false, error: 'Category ID required' }, 400);
+        }
+
+        // Check if category has bookmarks
+        const bookmarkCount = await env.DB.prepare(
+          'SELECT COUNT(*) as count FROM bookmarks WHERE category_id = ? AND user_id = ?'
+        ).bind(categoryId, user.id).first();
+
+        if (bookmarkCount.count > 0) {
+          return jsonResponse({
+            success: false,
+            error: `Cannot delete category with ${bookmarkCount.count} bookmarks. Please move or delete bookmarks first.`
+          }, 400);
+        }
+
+        // Check if category has child categories
+        const childCount = await env.DB.prepare(
+          'SELECT COUNT(*) as count FROM categories WHERE parent_id = ? AND user_id = ?'
+        ).bind(categoryId, user.id).first();
+
+        if (childCount.count > 0) {
+          return jsonResponse({
+            success: false,
+            error: `Cannot delete category with ${childCount.count} subcategories. Please move or delete subcategories first.`
+          }, 400);
+        }
+
+        const result = await env.DB.prepare(
+          'DELETE FROM categories WHERE id = ? AND user_id = ?'
+        ).bind(categoryId, user.id).run();
+
+        if (result.changes === 0) {
+          return jsonResponse({ success: false, error: 'Category not found' }, 404);
+        }
+
+        return jsonResponse({ success: true, message: 'Category deleted successfully' });
+      } catch (error) {
+        console.error('Delete category error:', error);
+        return jsonResponse({ success: false, error: 'Failed to delete category' }, 500);
+      }
 
     default:
       return jsonResponse({ success: false, error: 'Method not allowed' }, 405);
@@ -339,22 +504,175 @@ async function handleBookmarks(request, env) {
     return jsonResponse({ success: false, error: 'Authentication required' }, 401);
   }
 
+  const url = new URL(request.url);
+  const pathSegments = url.pathname.split('/').filter(Boolean);
+  const bookmarkId = pathSegments[2];
+
   switch (request.method) {
     case 'GET':
-      const bookmarks = await env.DB.prepare(
-        'SELECT * FROM bookmarks WHERE user_id = ? ORDER BY weight, title'
-      ).bind(user.id).all();
-      return jsonResponse({ success: true, data: bookmarks.results });
+      try {
+        if (bookmarkId) {
+          // Get single bookmark
+          const bookmark = await env.DB.prepare(
+            'SELECT * FROM bookmarks WHERE id = ? AND user_id = ?'
+          ).bind(bookmarkId, user.id).first();
+
+          if (!bookmark) {
+            return jsonResponse({ success: false, error: 'Bookmark not found' }, 404);
+          }
+
+          return jsonResponse({ success: true, data: bookmark });
+        } else {
+          // Get all bookmarks
+          const categoryId = url.searchParams.get('category_id');
+          let query = 'SELECT b.*, c.name as category_name FROM bookmarks b LEFT JOIN categories c ON b.category_id = c.id WHERE b.user_id = ?';
+          let params = [user.id];
+
+          if (categoryId) {
+            query += ' AND b.category_id = ?';
+            params.push(categoryId);
+          }
+
+          query += ' ORDER BY b.weight DESC, b.title ASC';
+
+          const bookmarks = await env.DB.prepare(query).bind(...params).all();
+          return jsonResponse({ success: true, data: bookmarks.results || [] });
+        }
+      } catch (error) {
+        console.error('Get bookmarks error:', error);
+        return jsonResponse({ success: false, error: 'Failed to get bookmarks' }, 500);
+      }
 
     case 'POST':
-      const data = await request.json();
-      const { title, url, category_id, description, keywords, is_private } = data;
+      try {
+        if (pathSegments[2] === 'reorder') {
+          // Handle bookmark reordering
+          const data = await request.json();
+          const { bookmark_ids } = data;
 
-      const result = await env.DB.prepare(
-        'INSERT INTO bookmarks (title, url, category_id, user_id, description, keywords, is_private) VALUES (?, ?, ?, ?, ?, ?, ?)'
-      ).bind(title, url, category_id, user.id, description, keywords, is_private ? 1 : 0).run();
+          if (!Array.isArray(bookmark_ids)) {
+            return jsonResponse({ success: false, error: 'Invalid bookmark_ids' }, 400);
+          }
 
-      return jsonResponse({ success: true, data: { id: result.meta.last_row_id } });
+          // Update weights based on order
+          for (let i = 0; i < bookmark_ids.length; i++) {
+            await env.DB.prepare(
+              'UPDATE bookmarks SET weight = ? WHERE id = ? AND user_id = ?'
+            ).bind(bookmark_ids.length - i, bookmark_ids[i], user.id).run();
+          }
+
+          return jsonResponse({ success: true, message: 'Bookmarks reordered successfully' });
+        } else if (bookmarkId && pathSegments[3] === 'click') {
+          // Handle click tracking
+          await env.DB.prepare(
+            'UPDATE bookmarks SET click_count = click_count + 1 WHERE id = ? AND user_id = ?'
+          ).bind(bookmarkId, user.id).run();
+
+          return jsonResponse({ success: true, message: 'Click recorded' });
+        } else {
+          // Create new bookmark
+          const data = await request.json();
+          const { title, url, category_id, description, keywords, is_private } = data;
+
+          if (!title || !url || !category_id) {
+            return jsonResponse({ success: false, error: 'Title, URL and category are required' }, 400);
+          }
+
+          // Validate URL
+          try {
+            new URL(url);
+          } catch {
+            return jsonResponse({ success: false, error: 'Invalid URL format' }, 400);
+          }
+
+          // Check if category belongs to user
+          const category = await env.DB.prepare(
+            'SELECT id FROM categories WHERE id = ? AND user_id = ?'
+          ).bind(category_id, user.id).first();
+
+          if (!category) {
+            return jsonResponse({ success: false, error: 'Invalid category' }, 400);
+          }
+
+          const result = await env.DB.prepare(
+            'INSERT INTO bookmarks (title, url, category_id, user_id, description, keywords, is_private, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, datetime("now"))'
+          ).bind(title, url, category_id, user.id, description || '', keywords || '', is_private ? 1 : 0).run();
+
+          return jsonResponse({ success: true, data: { id: result.meta.last_row_id }, message: 'Bookmark created successfully' });
+        }
+      } catch (error) {
+        console.error('Create bookmark error:', error);
+        return jsonResponse({ success: false, error: 'Failed to create bookmark' }, 500);
+      }
+
+    case 'PUT':
+      try {
+        if (!bookmarkId) {
+          return jsonResponse({ success: false, error: 'Bookmark ID required' }, 400);
+        }
+
+        const data = await request.json();
+        const { title, url, category_id, description, keywords, is_private } = data;
+
+        // Validate required fields
+        if (!title || !url || !category_id) {
+          return jsonResponse({ success: false, error: 'Title, URL and category are required' }, 400);
+        }
+
+        // Validate URL
+        try {
+          new URL(url);
+        } catch {
+          return jsonResponse({ success: false, error: 'Invalid URL format' }, 400);
+        }
+
+        // Check if bookmark belongs to user
+        const bookmark = await env.DB.prepare(
+          'SELECT id FROM bookmarks WHERE id = ? AND user_id = ?'
+        ).bind(bookmarkId, user.id).first();
+
+        if (!bookmark) {
+          return jsonResponse({ success: false, error: 'Bookmark not found' }, 404);
+        }
+
+        // Check if category belongs to user
+        const category = await env.DB.prepare(
+          'SELECT id FROM categories WHERE id = ? AND user_id = ?'
+        ).bind(category_id, user.id).first();
+
+        if (!category) {
+          return jsonResponse({ success: false, error: 'Invalid category' }, 400);
+        }
+
+        await env.DB.prepare(
+          'UPDATE bookmarks SET title = ?, url = ?, category_id = ?, description = ?, keywords = ?, is_private = ?, updated_at = datetime("now") WHERE id = ? AND user_id = ?'
+        ).bind(title, url, category_id, description || '', keywords || '', is_private ? 1 : 0, bookmarkId, user.id).run();
+
+        return jsonResponse({ success: true, message: 'Bookmark updated successfully' });
+      } catch (error) {
+        console.error('Update bookmark error:', error);
+        return jsonResponse({ success: false, error: 'Failed to update bookmark' }, 500);
+      }
+
+    case 'DELETE':
+      try {
+        if (!bookmarkId) {
+          return jsonResponse({ success: false, error: 'Bookmark ID required' }, 400);
+        }
+
+        const result = await env.DB.prepare(
+          'DELETE FROM bookmarks WHERE id = ? AND user_id = ?'
+        ).bind(bookmarkId, user.id).run();
+
+        if (result.changes === 0) {
+          return jsonResponse({ success: false, error: 'Bookmark not found' }, 404);
+        }
+
+        return jsonResponse({ success: true, message: 'Bookmark deleted successfully' });
+      } catch (error) {
+        console.error('Delete bookmark error:', error);
+        return jsonResponse({ success: false, error: 'Failed to delete bookmark' }, 500);
+      }
 
     default:
       return jsonResponse({ success: false, error: 'Method not allowed' }, 405);
@@ -475,29 +793,262 @@ function getContentType(path) {
   return types[ext] || 'application/octet-stream';
 }
 
-// Placeholder implementations for missing functions
-async function getCurrentUser(request, env) {
-  // Implementation would check JWT token from Authorization header
-  return null;
+/**
+ * JWT and Authentication utilities
+ */
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+// Base64URL encoding/decoding
+function base64urlEscape(str) {
+  return str.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+function base64urlUnescape(str) {
+  str += new Array(5 - str.length % 4).join('=');
+  return str.replace(/\-/g, '+').replace(/_/g, '/');
+}
+
+function base64urlDecode(str) {
+  return atob(base64urlUnescape(str));
+}
+
+function base64urlEncode(str) {
+  return base64urlEscape(btoa(str));
+}
+
+// JWT implementation
+async function generateJWT(user, secret) {
+  const header = {
+    alg: 'HS256',
+    typ: 'JWT'
+  };
+
+  const payload = {
+    user_id: user.id,
+    username: user.username,
+    role: user.role,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60) // 7 days
+  };
+
+  const encodedHeader = base64urlEncode(JSON.stringify(header));
+  const encodedPayload = base64urlEncode(JSON.stringify(payload));
+  const data = `${encodedHeader}.${encodedPayload}`;
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(data));
+  const encodedSignature = base64urlEncode(String.fromCharCode(...new Uint8Array(signature)));
+
+  return `${data}.${encodedSignature}`;
+}
+
+async function verifyJWT(token, secret) {
+  try {
+    const [header, payload, signature] = token.split('.');
+    const data = `${header}.${payload}`;
+
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['verify']
+    );
+
+    const isValid = await crypto.subtle.verify(
+      'HMAC',
+      key,
+      new Uint8Array([...base64urlDecode(signature)].map(c => c.charCodeAt(0))),
+      encoder.encode(data)
+    );
+
+    if (!isValid) return null;
+
+    const decodedPayload = JSON.parse(base64urlDecode(payload));
+
+    // Check expiration
+    if (decodedPayload.exp < Math.floor(Date.now() / 1000)) {
+      return null;
+    }
+
+    return decodedPayload;
+  } catch (error) {
+    return null;
+  }
+}
+
+// Password hashing and verification
+async function hashPassword(password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
+
+  const hash = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: salt,
+      iterations: 10000,
+      hash: 'SHA-256'
+    },
+    key,
+    256
+  );
+
+  const hashArray = new Uint8Array(hash);
+  const combined = new Uint8Array(salt.length + hashArray.length);
+  combined.set(salt);
+  combined.set(hashArray, salt.length);
+
+  return base64urlEncode(String.fromCharCode(...combined));
 }
 
 async function verifyPassword(password, hash) {
-  // Implementation would use proper password verification
-  return password === 'demo'; // Placeholder
+  try {
+    const combined = new Uint8Array([...base64urlDecode(hash)].map(c => c.charCodeAt(0)));
+    const salt = combined.slice(0, 16);
+    const storedHash = combined.slice(16);
+
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(password),
+      'PBKDF2',
+      false,
+      ['deriveBits']
+    );
+
+    const derivedHash = await crypto.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        salt: salt,
+        iterations: 10000,
+        hash: 'SHA-256'
+      },
+      key,
+      256
+    );
+
+    const derivedArray = new Uint8Array(derivedHash);
+
+    // Constant time comparison
+    let result = 0;
+    for (let i = 0; i < storedHash.length; i++) {
+      result |= storedHash[i] ^ derivedArray[i];
+    }
+
+    return result === 0;
+  } catch (error) {
+    return false;
+  }
 }
 
-async function generateJWT(user, secret) {
-  // Implementation would generate proper JWT token
-  return 'demo-token'; // Placeholder
+// Get current user from request
+async function getCurrentUser(request, env) {
+  const authHeader = request.headers.get('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+
+  const token = authHeader.substring(7);
+  const payload = await verifyJWT(token, env.JWT_SECRET);
+
+  if (!payload) {
+    return null;
+  }
+
+  try {
+    const user = await env.DB.prepare('SELECT * FROM users WHERE id = ? AND is_active = 1')
+      .bind(payload.user_id).first();
+
+    if (!user) {
+      return null;
+    }
+
+    return {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      avatar_url: user.avatar_url
+    };
+  } catch (error) {
+    console.error('Error getting current user:', error);
+    return null;
+  }
 }
 
-// Additional handlers
+/**
+ * Additional API handlers
+ */
 async function handleRegister(request, env) {
-  return jsonResponse({ success: false, error: 'Registration not implemented' }, 501);
+  try {
+    // Check if registration is allowed
+    const allowRegistration = await env.DB.prepare(
+      'SELECT setting_value FROM settings WHERE setting_key = "allow_registration"'
+    ).first();
+
+    if (!allowRegistration || allowRegistration.setting_value !== '1') {
+      return jsonResponse({ success: false, error: 'Registration is disabled' }, 403);
+    }
+
+    const data = await request.json();
+    const { username, email, password, password_confirm } = data;
+
+    // Validation
+    if (!username || !email || !password) {
+      return jsonResponse({ success: false, error: 'Username, email and password are required' }, 400);
+    }
+
+    if (password !== password_confirm) {
+      return jsonResponse({ success: false, error: 'Passwords do not match' }, 400);
+    }
+
+    if (password.length < 6) {
+      return jsonResponse({ success: false, error: 'Password must be at least 6 characters' }, 400);
+    }
+
+    // Check if user exists
+    const existingUser = await env.DB.prepare(
+      'SELECT id FROM users WHERE username = ? OR email = ?'
+    ).bind(username, email).first();
+
+    if (existingUser) {
+      return jsonResponse({ success: false, error: 'Username or email already exists' }, 409);
+    }
+
+    // Hash password and create user
+    const passwordHash = await hashPassword(password);
+    const result = await env.DB.prepare(
+      'INSERT INTO users (username, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, datetime("now"))'
+    ).bind(username, email, passwordHash, 'user').run();
+
+    return jsonResponse({
+      success: true,
+      message: 'User registered successfully',
+      user_id: result.meta.last_row_id
+    });
+  } catch (error) {
+    console.error('Registration error:', error);
+    return jsonResponse({ success: false, error: 'Registration failed' }, 500);
+  }
 }
 
 async function handleLogout(request, env) {
-  return jsonResponse({ success: true });
+  // In a stateless JWT system, logout is typically handled client-side
+  // by removing the token. Server-side, we could maintain a blacklist.
+  return jsonResponse({ success: true, message: 'Logged out successfully' });
 }
 
 async function handleGetCurrentUser(request, env) {
@@ -510,23 +1061,172 @@ async function handleGetCurrentUser(request, env) {
 
 async function handleCheckAuth(request, env) {
   const user = await getCurrentUser(request, env);
-  return jsonResponse({ success: true, authenticated: !!user });
+  return jsonResponse({ success: true, authenticated: !!user, user: user || null });
 }
 
 async function handleSearch(request, env) {
-  return jsonResponse({ success: false, error: 'Search not implemented' }, 501);
+  const user = await getCurrentUser(request, env);
+  if (!user) {
+    return jsonResponse({ success: false, error: 'Authentication required' }, 401);
+  }
+
+  const url = new URL(request.url);
+  const query = url.searchParams.get('q');
+
+  if (!query || query.trim().length < 2) {
+    return jsonResponse({ success: false, error: 'Search query must be at least 2 characters' }, 400);
+  }
+
+  try {
+    const searchPattern = `%${query.trim()}%`;
+    const bookmarks = await env.DB.prepare(`
+      SELECT b.*, c.name as category_name
+      FROM bookmarks b
+      LEFT JOIN categories c ON b.category_id = c.id
+      WHERE b.user_id = ?
+        AND (b.is_private = 0 OR b.user_id = ?)
+        AND (b.title LIKE ? OR b.description LIKE ? OR b.keywords LIKE ? OR b.url LIKE ?)
+      ORDER BY b.weight DESC, b.title ASC
+      LIMIT 50
+    `).bind(
+      user.id, user.id,
+      searchPattern, searchPattern, searchPattern, searchPattern
+    ).all();
+
+    return jsonResponse({ success: true, data: bookmarks.results || [] });
+  } catch (error) {
+    console.error('Search error:', error);
+    return jsonResponse({ success: false, error: 'Search failed' }, 500);
+  }
 }
 
 async function handleStats(request, env) {
-  return jsonResponse({ success: false, error: 'Stats not implemented' }, 501);
+  const user = await getCurrentUser(request, env);
+  if (!user) {
+    return jsonResponse({ success: false, error: 'Authentication required' }, 401);
+  }
+
+  try {
+    const stats = await Promise.all([
+      env.DB.prepare('SELECT COUNT(*) as count FROM bookmarks WHERE user_id = ?').bind(user.id).first(),
+      env.DB.prepare('SELECT COUNT(*) as count FROM categories WHERE user_id = ?').bind(user.id).first(),
+      env.DB.prepare('SELECT COUNT(*) as count FROM bookmarks WHERE user_id = ? AND is_private = 1').bind(user.id).first(),
+      env.DB.prepare('SELECT SUM(click_count) as total FROM bookmarks WHERE user_id = ?').bind(user.id).first()
+    ]);
+
+    return jsonResponse({
+      success: true,
+      data: {
+        total_bookmarks: stats[0].count,
+        total_categories: stats[1].count,
+        private_bookmarks: stats[2].count,
+        total_clicks: stats[3].total || 0
+      }
+    });
+  } catch (error) {
+    console.error('Stats error:', error);
+    return jsonResponse({ success: false, error: 'Failed to get statistics' }, 500);
+  }
 }
 
 async function handleSettings(request, env) {
-  return jsonResponse({ success: false, error: 'Settings not implemented' }, 501);
+  const user = await getCurrentUser(request, env);
+  if (!user) {
+    return jsonResponse({ success: false, error: 'Authentication required' }, 401);
+  }
+
+  switch (request.method) {
+    case 'GET':
+      try {
+        const settings = await env.DB.prepare(
+          'SELECT setting_key, setting_value, setting_type FROM settings WHERE is_public = 1'
+        ).all();
+
+        const userSettings = user.settings ? JSON.parse(user.settings) : {};
+
+        return jsonResponse({
+          success: true,
+          data: {
+            public_settings: settings.results || [],
+            user_settings: userSettings
+          }
+        });
+      } catch (error) {
+        return jsonResponse({ success: false, error: 'Failed to get settings' }, 500);
+      }
+
+    case 'PUT':
+      try {
+        const data = await request.json();
+        const settingsJson = JSON.stringify(data);
+
+        await env.DB.prepare(
+          'UPDATE users SET settings = ? WHERE id = ?'
+        ).bind(settingsJson, user.id).run();
+
+        return jsonResponse({ success: true, message: 'Settings updated successfully' });
+      } catch (error) {
+        return jsonResponse({ success: false, error: 'Failed to update settings' }, 500);
+      }
+
+    default:
+      return jsonResponse({ success: false, error: 'Method not allowed' }, 405);
+  }
 }
 
 async function handleAdmin(request, env) {
-  return jsonResponse({ success: false, error: 'Admin not implemented' }, 501);
+  const user = await getCurrentUser(request, env);
+  if (!user || user.role !== 'admin') {
+    return jsonResponse({ success: false, error: 'Admin access required' }, 403);
+  }
+
+  const url = new URL(request.url);
+  const pathSegments = url.pathname.split('/').filter(Boolean);
+  const action = pathSegments[2];
+
+  switch (action) {
+    case 'users':
+      if (request.method === 'GET') {
+        try {
+          const users = await env.DB.prepare(
+            'SELECT id, username, email, role, created_at, last_login, is_active FROM users ORDER BY created_at DESC'
+          ).all();
+          return jsonResponse({ success: true, data: users.results || [] });
+        } catch (error) {
+          return jsonResponse({ success: false, error: 'Failed to get users' }, 500);
+        }
+      }
+      break;
+
+    case 'system':
+      if (request.method === 'GET') {
+        try {
+          const stats = await Promise.all([
+            env.DB.prepare('SELECT COUNT(*) as count FROM users').first(),
+            env.DB.prepare('SELECT COUNT(*) as count FROM bookmarks').first(),
+            env.DB.prepare('SELECT COUNT(*) as count FROM categories').first()
+          ]);
+
+          return jsonResponse({
+            success: true,
+            data: {
+              total_users: stats[0].count,
+              total_bookmarks: stats[1].count,
+              total_categories: stats[2].count,
+              version: '1.0.0'
+            }
+          });
+        } catch (error) {
+          return jsonResponse({ success: false, error: 'Failed to get system stats' }, 500);
+        }
+      }
+      break;
+
+    default:
+      return jsonResponse({ success: false, error: 'Admin endpoint not found' }, 404);
+  }
+
+  return jsonResponse({ success: false, error: 'Method not allowed' }, 405);
 }
 
 async function serveServiceWorker(env) {
@@ -539,4 +1239,57 @@ async function serveInstallPage(env) {
   return new Response('Installation not needed for Workers deployment', {
     headers: { 'Content-Type': 'text/plain' }
   });
+}
+
+/**
+ * Initialize default admin account if configured
+ */
+async function initializeDefaultAdmin(env) {
+  // Check if auto-create admin is enabled
+  if (!env.AUTO_CREATE_ADMIN || env.AUTO_CREATE_ADMIN !== 'true') {
+    return;
+  }
+
+  try {
+    // Check if any admin user exists
+    const adminCheck = await env.DB.prepare(
+      'SELECT COUNT(*) as count FROM users WHERE role IN (?, ?)'
+    ).bind('admin', 'superadmin').first();
+
+    if (adminCheck.count > 0) {
+      return; // Admin already exists
+    }
+
+    // Get default admin credentials from environment
+    const username = env.DEFAULT_ADMIN_USERNAME || 'admin';
+    const password = env.DEFAULT_ADMIN_PASSWORD || 'admin679';
+    const email = env.DEFAULT_ADMIN_EMAIL || 'admin@example.com';
+
+    // Hash the password
+    const passwordHash = await hashPassword(password);
+
+    // Create the default admin user
+    await env.DB.prepare(
+      'INSERT INTO users (username, email, password_hash, role, is_active, created_at) VALUES (?, ?, ?, ?, 1, datetime("now"))'
+    ).bind(username, email, passwordHash, 'admin').run();
+
+    console.log(`OneBookNav: Default admin account created - Username: ${username}`);
+
+    // Insert default settings if not exists
+    const defaultSettings = [
+      ['site_title', env.SITE_TITLE || 'OneBookNav', 'string', 1],
+      ['allow_registration', '1', 'boolean', 1],
+      ['version', '1.0.0', 'string', 1],
+      ['installation_date', new Date().toISOString(), 'string', 0]
+    ];
+
+    for (const setting of defaultSettings) {
+      await env.DB.prepare(
+        'INSERT OR IGNORE INTO settings (setting_key, setting_value, setting_type, is_public) VALUES (?, ?, ?, ?)'
+      ).bind(...setting).run();
+    }
+
+  } catch (error) {
+    console.error('OneBookNav: Failed to create default admin account:', error);
+  }
 }

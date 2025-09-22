@@ -15,10 +15,7 @@
     "secret:jwt": "wrangler secret put JWT_SECRET",
     "logs": "wrangler tail"
   },
-  "dependencies": {
-    "hono": "^3.0.0",
-    "itty-router": "^4.0.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",
     "typescript": "^5.0.0",

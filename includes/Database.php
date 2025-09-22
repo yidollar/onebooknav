@@ -247,6 +247,40 @@ class Database {
             $stmt = $this->pdo->prepare($sql);
             $stmt->execute($setting);
         }
+
+        // Create default admin account if enabled and no admin exists
+        if (defined('AUTO_CREATE_ADMIN') && AUTO_CREATE_ADMIN) {
+            $this->createDefaultAdminAccount();
+        }
+    }
+
+    private function createDefaultAdminAccount() {
+        try {
+            // Check if any admin user exists
+            $stmt = $this->pdo->prepare("SELECT COUNT(*) FROM users WHERE role IN ('admin', 'superadmin')");
+            $stmt->execute();
+            $adminCount = $stmt->fetchColumn();
+
+            if ($adminCount == 0) {
+                // Create default admin user
+                $passwordHash = password_hash(DEFAULT_ADMIN_PASSWORD, PASSWORD_ARGON2ID);
+
+                $sql = "INSERT INTO users (username, email, password_hash, role, is_active, created_at) VALUES (?, ?, ?, ?, 1, " .
+                       ($this->config['type'] === 'sqlite' ? "datetime('now')" : "NOW()") . ")";
+
+                $stmt = $this->pdo->prepare($sql);
+                $stmt->execute([
+                    DEFAULT_ADMIN_USERNAME,
+                    DEFAULT_ADMIN_EMAIL,
+                    $passwordHash,
+                    'admin'
+                ]);
+
+                error_log("OneBookNav: Default admin account created - Username: " . DEFAULT_ADMIN_USERNAME);
+            }
+        } catch (Exception $e) {
+            error_log("OneBookNav: Failed to create default admin account - " . $e->getMessage());
+        }
     }
 
     public function getPDO() {
